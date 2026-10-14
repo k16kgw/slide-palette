@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>スライド配色メーカー</title>
+<meta name="description" content="メインカラーを1つ決めると、スライド用の強調色・黒字用の明るい背景色・白字用の暗い背景色を計算します。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ページ自体も生成した配色で塗る（JS が --main / --accent / --light / --dark を更新） */
+  :root {
+    color-scheme: light;
+    --main: #0066CC;
+    --accent: #D99613;
+    --light: #EAF3FF;
+    --dark: #05468C;
+    --ink: #000;
+    --paper: #fff;
+    --line: rgba(0, 0, 0, .14);
+    --muted: rgba(0, 0, 0, .62);
+    --radius-s: 4px;
+    --radius-m: 10px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--light);
+    color: var(--ink);
+    font-family: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    transition: background-color .25s;
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  header.site {
+    background: var(--dark);
+    color: #fff;
+    padding: 28px 16px 26px;
+    transition: background-color .25s;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+  header.site .wrap { padding: 0; }
+  header.site h1 { margin: 0; font-size: 1.75rem; line-height: 1.3; letter-spacing: .02em; }
+  header.site p { margin: 6px 0 0; max-width: 42em; opacity: .92; }
+
+  main.wrap {
+    display: grid;
+    grid-template-columns: minmax(280px, 340px) 1fr;
+    gap: 32px;
+    padding-top: 28px;
+    padding-bottom: 48px;
+  }
+  main.wrap > .panel { align-self: start; }
+  @media (max-width: 820px) {
+    main.wrap { grid-template-columns: 1fr; gap: 24px; }
+    /* スマホではスライド見本を先頭に */
+    main.wrap > .results { display: contents; }
+    .results > .slide { order: -1; }
+    .results > :not(.slide) { order: 1; }
+    .swatches, details.rules { margin-top: 0; }
+    .all-row { margin-top: -12px; }
+  }
+
+  h2 { font-size: 1.125rem; margin: 0 0 12px; line-height: 1.4; }
+
+  /* ---------- 入力パネル ---------- */
+  .panel {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    padding: 20px;
+  }
+  .field-label { display: block; font-weight: 700; margin-bottom: 6px; }
+  .spec-row { display: flex; gap: 8px; }
+  input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 1.0625rem;
+    padding: 9px 11px;
+    border: 1.5px solid rgba(0,0,0,.35);
+    border-radius: var(--radius-s);
+    background: #fff;
+    color: var(--ink);
+  }
+  input[type="color"] {
+    width: 48px; height: 46px; padding: 3px;
+    border: 1.5px solid rgba(0,0,0,.35);
+    border-radius: var(--radius-s);
+    background: #fff;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--main); outline-offset: 2px; }
+  .hint { font-size: .875rem; color: var(--muted); margin: 8px 0 0; }
+  .error { color: #B00020; font-size: .9rem; margin: 8px 0 0; }
+  .error:empty { display: none; }
+  input[aria-invalid="true"] { border-color: #B00020; }
+
+  .examples { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+  .examples button {
+    font: inherit; font-size: .8125rem;
+    padding: 3px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .examples button:hover { border-color: rgba(0,0,0,.5); }
+
+  .section-gap { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+
+  /* 色相環 */
+  .wheel-area { display: flex; gap: 18px; align-items: center; }
+  .wheel {
+    --s: 70%; --l: 45%;
+    position: relative;
+    flex: none;
+    width: 132px; height: 132px;
+    border-radius: 50%;
+    background: conic-gradient(
+      hsl(0 var(--s) var(--l)), hsl(60 var(--s) var(--l)), hsl(120 var(--s) var(--l)),
+      hsl(180 var(--s) var(--l)), hsl(240 var(--s) var(--l)), hsl(300 var(--s) var(--l)),
+      hsl(360 var(--s) var(--l)));
+    -webkit-mask: radial-gradient(circle, transparent 38%, #000 39%);
+            mask: radial-gradient(circle, transparent 38%, #000 39%);
+    cursor: crosshair;
+    touch-action: none;
+  }
+  .wheel-wrap { position: relative; width: 132px; height: 132px; flex: none; }
+  .wheel-wrap:focus-visible { outline-offset: 4px; border-radius: 50%; }
+  .wheel-marker {
+    position: absolute;
+    width: 18px; height: 18px;
+    margin: -9px 0 0 -9px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 1.5px #000;
+    pointer-events: none;
+  }
+  .wheel-center {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    font-size: .875rem; font-weight: 700;
+    pointer-events: none;
+  }
+  .sliders { flex: 1; min-width: 0; }
+  .sliders label { display: flex; justify-content: space-between; font-size: .875rem; }
+  .sliders input[type="range"] { width: 100%; margin: 2px 0 10px; accent-color: var(--main); }
+
+  .target-group { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 0; }
+  .target-group legend { font-weight: 700; margin-bottom: 6px; padding: 0; }
+  .target-group label {
+    display: grid; grid-template-columns: auto 1fr; column-gap: 8px;
+    align-items: baseline; cursor: pointer;
+  }
+  .target-group input { accent-color: var(--main); }
+  .target-group b { white-space: nowrap; }
+  .target-group small { grid-column: 2; color: var(--muted); font-size: .8125rem; line-height: 1.5; }
+
+  /* ---------- スライドのプレビュー（主役） ---------- */
+  .slide {
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    border-radius: var(--radius-s);
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,.18), 0 12px 32px -12px rgba(0,0,0,.35);
+    background: var(--light);
+    display: grid;
+    grid-template-rows: 22% 1fr;
+    container-type: inline-size;
+    transition: background-color .25s;
+  }
+  .slide-title {
+    background: var(--dark);
+    color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 5cqw;
+    transition: background-color .25s;
+  }
+  .slide-title strong { font-size: 4.2cqw; line-height: 1.2; }
+  .slide-title span { font-size: 2.2cqw; opacity: .9; }
+  .slide-body {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 4cqw;
+    padding: 4cqw 5cqw;
+    color: #000;
+    min-height: 0;
+  }
+  .slide-body ul { margin: 0; padding: 0 0 0 1.2em; font-size: 2.6cqw; line-height: 1.6; }
+  .slide-body li::marker { color: var(--main); }
+  .slide-body li + li { margin-top: .6cqw; }
+  .slide-body mark {
+    background: linear-gradient(transparent 58%, var(--accent) 58%);
+    color: inherit;
+    padding: 0 .1em;
+  }
+  .slide-callout {
+    margin-top: 2.4cqw;
+    border-left: .9cqw solid var(--accent);
+    background: #fff;
+    padding: 1.4cqw 2cqw;
+    font-size: 2.2cqw;
+    line-height: 1.5;
+  }
+  .chart {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-items: end;
+    gap: 1.6cqw;
+    border-bottom: .3cqw solid rgba(0,0,0,.55);
+    padding: 0 1cqw;
+    height: 100%;
+    min-height: 0;
+  }
+  .chart div { background: var(--main); border-radius: .5cqw .5cqw 0 0; transition: background-color .25s; }
+  .chart div.hi { background: var(--accent); }
+  .chart-cap { font-size: 1.9cqw; text-align: right; margin-top: .8cqw; color: rgba(0,0,0,.7); }
+  .chart-box { display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+
+  /* ---------- 配色の一覧 ---------- */
+  .swatches { margin-top: 28px; display: grid; gap: 10px; }
+  .swatch {
+    display: grid;
+    grid-template-columns: 72px 1fr auto;
+    gap: 16px;
+    align-items: center;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    padding: 10px 12px 10px 10px;
+  }
+  .chip {
+    width: 72px; height: 56px;
+    border-radius: var(--radius-s);
+    display: grid; place-items: center;
+    font-weight: 700; font-size: .9375rem;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.12);
+  }
+  .swatch h3 { margin: 0; font-size: 1rem; line-height: 1.4; }
+  .swatch .role { margin: 0; font-size: .8125rem; color: var(--muted); }
+  .values { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .values code { font-family: inherit; font-size: .9375rem; }
+  .ratio { font-size: .8125rem; }
+  .ratio b { font-weight: 700; }
+  .ratio .ng { color: #B00020; }
+  .copy-btns { display: flex; flex-direction: column; gap: 6px; }
+  .copy-btns button, .btn {
+    font: inherit; font-size: .8125rem;
+    padding: 5px 10px;
+    border: 1px solid rgba(0,0,0,.3);
+    border-radius: var(--radius-s);
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+    white-space: nowrap;
+    min-width: 7.5em;
+  }
+  .copy-btns button:hover, .btn:hover { background: var(--light); }
+  @media (max-width: 520px) {
+    .swatch { grid-template-columns: 56px 1fr; }
+    .chip { width: 56px; height: 48px; font-size: .8125rem; }
+    .copy-btns { grid-column: 1 / -1; flex-direction: row; }
+    .copy-btns button { flex: 1; }
+  }
+  .all-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn-strong { background: var(--dark); color: #fff; border-color: var(--dark); font-size: .875rem; padding: 7px 14px; }
+  .btn-strong:hover { background: var(--dark); filter: brightness(1.15); }
+
+  details.rules {
+    margin-top: 28px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    padding: 14px 20px;
+  }
+  details.rules summary { cursor: pointer; font-weight: 700; }
+  details.rules table { border-collapse: collapse; width: 100%; margin: 12px 0 4px; font-size: .9rem; }
+  details.rules th, details.rules td { text-align: left; padding: 8px 10px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  details.rules th { white-space: nowrap; }
+  details.rules p { margin: 10px 0 0; font-size: .9rem; max-width: 46em; }
+
+  footer.site { padding: 0 16px 40px; font-size: .8125rem; color: var(--muted); }
+  footer.site a { color: inherit; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <h1>スライド配色メーカー</h1>
+    <p>メインカラーを1つ決めると、強調色・黒字用の明るい背景色・白字用の暗い背景色を計算します。このページも選んだ配色で表示されます。</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- 入力 -->
+  <section class="panel" aria-labelledby="input-h">
+    <h2 id="input-h">メインカラー</h2>
+
+    <label class="field-label" for="spec">色の指定</label>
+    <div class="spec-row">
+      <input type="text" id="spec" value="#0066CC" autocomplete="off" spellcheck="false"
+             aria-describedby="spec-hint spec-error">
+      <input type="color" id="picker" value="#0066cc" aria-label="カラーピッカーで選ぶ">
+    </div>
+    <p class="error" id="spec-error" role="alert"></p>
+    <p class="hint" id="spec-hint">カラーコード・RGB・HSL・HSV・色相の角度・OKLCH・CMYK のどれでも入力できます。</p>
+    <ul class="examples" aria-label="入力例">
+      <li><button type="button">#0066CC</button></li>
+      <li><button type="button">rgb(0,102,204)</button></li>
+      <li><button type="button">hsl(210,100%,40%)</button></li>
+      <li><button type="button">hsv(150,80%,55%)</button></li>
+      <li><button type="button">340</button></li>
+      <li><button type="button">oklch(0.55 0.15 30)</button></li>
+      <li><button type="button">cmyk(0,70%,90%,10%)</button></li>
+    </ul>
+
+    <div class="section-gap">
+      <h2>色相環から選ぶ</h2>
+      <div class="wheel-area">
+        <div class="wheel-wrap" id="wheel-wrap" tabindex="0" role="slider"
+             aria-label="色相" aria-valuemin="0" aria-valuemax="359" aria-valuenow="210"
+             aria-valuetext="210度">
+          <div class="wheel" id="wheel"></div>
+          <div class="wheel-marker" id="wheel-marker"></div>
+          <div class="wheel-center" id="wheel-deg">210°</div>
+        </div>
+        <div class="sliders">
+          <label for="sat"><span>彩度</span><output id="sat-out">70%</output></label>
+          <input type="range" id="sat" min="0" max="100" value="70">
+          <label for="lig"><span>明度</span><output id="lig-out">45%</output></label>
+          <input type="range" id="lig" min="5" max="95" value="45">
+        </div>
+      </div>
+      <p class="hint">色相環をクリック（またはドラッグ、矢印キー）すると HSL の指定として入力欄に反映されます。</p>
+    </div>
+
+    <div class="section-gap">
+      <fieldset class="target-group">
+        <legend>文字と背景のコントラスト基準</legend>
+        <label><input type="radio" name="target" value="7" checked><b>7 : 1</b><small>推奨。プロジェクターでも読みやすい</small></label>
+        <label><input type="radio" name="target" value="4.5"><b>4.5 : 1</b><small>最低限の基準。暗い色に色味を残したいとき</small></label>
+      </fieldset>
+    </div>
+  </section>
+
+  <!-- 結果 -->
+  <section class="results" aria-labelledby="result-h">
+    <h2 id="result-h" class="sr-only">計算結果</h2>
+
+    <div class="slide" role="img" aria-label="生成した配色を当てはめたスライドの見本">
+      <div class="slide-title">
+        <strong>第3回　配色の基本</strong>
+        <span>暗い色 × 白字</span>
+      </div>
+      <div class="slide-body">
+        <div>
+          <ul>
+            <li>背景は明るい色、文字は黒</li>
+            <li>見出しの帯は暗い色に白字</li>
+            <li>強調色は<mark>ここぞという所</mark>だけ</li>
+          </ul>
+          <div class="slide-callout">面積の目安<br>ベース 70 : メイン 25 : 強調 5</div>
+        </div>
+        <div class="chart-box">
+          <div class="chart" aria-hidden="true">
+            <div style="height:42%"></div>
+            <div style="height:58%"></div>
+            <div style="height:51%"></div>
+            <div class="hi" style="height:88%"></div>
+            <div style="height:64%"></div>
+          </div>
+          <div class="chart-cap">注目させたい1本だけ強調色</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="swatches" id="swatches" aria-live="polite"></div>
+
+    <div class="all-row">
+      <button type="button" class="btn" id="copy-link">このページのURLをコピー</button>
+      <button type="button" class="btn btn-strong" id="copy-all">4色をまとめてコピー</button>
+    </div>
+
+    <details class="rules">
+      <summary>計算のルール</summary>
+      <p>メインカラーを見た目の明るさに忠実な色空間 OKLCH（明度 L・彩度 C・色相 h）に変換し、色相を基準に他の3色を決めています。</p>
+      <table>
+        <tr><th>明るい色</th><td>色相はそのまま、明度 L = 0.96、彩度はメインの 1/4（上限 0.04）。ほんのり色づいた白になります。</td></tr>
+        <tr><th>暗い色</th><td>色相はそのまま、彩度はメインの 0.8 倍（上限 0.14）。明度 0.40 から、白字とのコントラストが基準を満たすまで暗くします。</td></tr>
+        <tr><th>強調色</th><td>色相を 180° 回した補色。メインが暗めなら明度 0.72、明るめなら 0.50 にして明暗の差もつけます。メインがグレーに近いときはオレンジ系に固定します。</td></tr>
+      </table>
+      <p>コントラスト比は WCAG の定義（相対輝度の比）で計算しています。7 : 1 以上は AAA、4.5 : 1 以上は AA の基準です。</p>
+    </details>
+  </section>
+</main>
+
+<footer class="site">
+  <div class="wrap" id="footer-text">計算はすべてこのブラウザの中で行われます。</div>
+</footer>
+
+<script src="palette.js"></script>
+<script>
+(function () {
+  "use strict";
+  const P = window.SlidePalette;
+  const $ = (id) => document.getElementById(id);
+  const spec = $("spec"), picker = $("picker"), err = $("spec-error");
+  const wrap = $("wheel-wrap"), wheel = $("wheel"), marker = $("wheel-marker"), degOut = $("wheel-deg");
+  const sat = $("sat"), lig = $("lig");
+  let current = null;
+  let hue = 210;
+
+  const rgbText = (c) => c.join(", ");
+  const target = () => parseFloat(document.querySelector('input[name="target"]:checked').value);
+
+  // RGB → HSL（色相環の位置を入力に合わせるため）
+  function rgbToHsl([r, g, b]) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return [hue, 0, l * 100];
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return [h * 60, s * 100, l * 100];
+  }
+
+  function rating(r) {
+    if (r >= 7) return "AAA";
+    if (r >= 4.5) return "AA";
+    return null;
+  }
+
+  function ratioHtml(label, r) {
+    const ok = rating(r);
+    return `<span class="ratio">${label} <b>${r.toFixed(1)} : 1</b> ` +
+      (ok ? `（${ok}）` : `<span class="ng">（基準未満）</span>`) + `</span>`;
+  }
+
+  function renderSwatches(p) {
+    const rows = [
+      { key: "main", name: "メイン", role: "グラフ・図形・アイコンなど", chipText: "", fg: null },
+      { key: "accent", name: "強調色", role: "最も伝えたい1か所だけに使う", chipText: "", fg: null,
+        extra: `<span class="ratio">メインとの明暗差 <b>${p.contrast_accent_vs_main.toFixed(1)} : 1</b></span>` },
+      { key: "light", name: "明るい色", role: "黒字を載せる背景", chipText: "文字", fg: "#000",
+        extra: ratioHtml("黒字", p.contrast_black_on_light) },
+      { key: "dark", name: "暗い色", role: "白字を載せる背景・見出しの帯", chipText: "文字", fg: "#fff",
+        extra: ratioHtml("白字", p.contrast_white_on_dark) },
+    ];
+    $("swatches").innerHTML = rows.map((row) => {
+      const c = p[row.key], hex = P.toHex(c);
+      return `<div class="swatch">
+        <div class="chip" style="background:${hex};color:${row.fg || "transparent"}">${row.chipText}</div>
+        <div>
+          <h3>${row.name}</h3>
+          <p class="role">${row.role}</p>
+          <div class="values"><code>RGB(${rgbText(c)})</code><code>${hex}</code>${row.extra || ""}</div>
+        </div>
+        <div class="copy-btns">
+          <button type="button" data-copy="${hex}">HEXをコピー</button>
+          <button type="button" data-copy="${rgbText(c)}">RGBをコピー</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function apply(fromWheel) {
+    let p;
+    try {
+      p = P.palette(spec.value, target());
+    } catch (e) {
+      err.textContent = e.message + "。下の入力例の形式で書いてください。";
+      spec.setAttribute("aria-invalid", "true");
+      return;
+    }
+    err.textContent = "";
+    spec.removeAttribute("aria-invalid");
+    current = p;
+
+    const root = document.documentElement.style;
+    for (const k of ["main", "accent", "light", "dark"]) root.setProperty("--" + k, P.toHex(p[k]));
+    picker.value = P.toHex(p.main).toLowerCase();
+    renderSwatches(p);
+
+    if (!fromWheel) {
+      const [h, s, l] = rgbToHsl(p.main);
+      hue = Math.round(h) % 360;
+      sat.value = Math.round(s);
+      lig.value = Math.min(95, Math.max(5, Math.round(l)));
+    }
+    updateWheel();
+
+    try { history.replaceState(null, "", "#c=" + encodeURIComponent(spec.value.trim())); } catch (e) {}
+  }
+
+  function updateWheel() {
+    const s = sat.value, l = lig.value;
+    wheel.style.setProperty("--s", s + "%");
+    wheel.style.setProperty("--l", l + "%");
+    $("sat-out").textContent = s + "%";
+    $("lig-out").textContent = l + "%";
+    const r = 132 / 2, rr = r * 0.69;
+    const a = (hue * Math.PI) / 180;
+    marker.style.left = r + rr * Math.sin(a) + "px";
+    marker.style.top = r - rr * Math.cos(a) + "px";
+    marker.style.background = `hsl(${hue} ${s}% ${l}%)`;
+    degOut.textContent = hue + "°";
+    wrap.setAttribute("aria-valuenow", hue);
+    wrap.setAttribute("aria-valuetext", hue + "度");
+  }
+
+  function setFromWheel() {
+    spec.value = `hsl(${hue}, ${sat.value}%, ${lig.value}%)`;
+    apply(true);
+  }
+
+  function hueFromPointer(e) {
+    const b = wrap.getBoundingClientRect();
+    const x = e.clientX - b.left - b.width / 2, y = e.clientY - b.top - b.height / 2;
+    hue = Math.round(((Math.atan2(x, -y) * 180) / Math.PI + 360) % 360);
+    setFromWheel();
+  }
+
+  // ---------- イベント ----------
+  spec.addEventListener("input", () => apply(false));
+  picker.addEventListener("input", () => { spec.value = picker.value.toUpperCase(); apply(false); });
+  document.querySelectorAll(".examples button").forEach((b) =>
+    b.addEventListener("click", () => { spec.value = b.textContent; apply(false); spec.focus(); }));
+  document.querySelectorAll('input[name="target"]').forEach((r) => r.addEventListener("change", () => apply(true)));
+  sat.addEventListener("input", setFromWheel);
+  lig.addEventListener("input", setFromWheel);
+
+  let dragging = false;
+  wrap.addEventListener("pointerdown", (e) => { dragging = true; wrap.setPointerCapture(e.pointerId); hueFromPointer(e); });
+  wrap.addEventListener("pointermove", (e) => { if (dragging) hueFromPointer(e); });
+  wrap.addEventListener("pointerup", () => { dragging = false; });
+  wrap.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 10 : 1;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") hue = (hue + step) % 360;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") hue = (hue - step + 360) % 360;
+    else return;
+    e.preventDefault();
+    setFromWheel();
+  });
+
+  async function copy(text, btn) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      const t = document.createElement("textarea");
+      t.value = text; document.body.appendChild(t); t.select();
+      document.execCommand("copy"); t.remove();
+    }
+    const old = btn.textContent;
+    btn.textContent = "コピーしました";
+    setTimeout(() => { btn.textContent = old; }, 1400);
+  }
+
+  $("swatches").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-copy]");
+    if (b) copy(b.dataset.copy, b);
+  });
+  $("copy-all").addEventListener("click", (e) => {
+    if (!current) return;
+    const names = { main: "メイン", accent: "強調色", light: "明るい色（黒字背景）", dark: "暗い色（白字背景）" };
+    const text = Object.entries(names)
+      .map(([k, n]) => `${n}\tRGB(${rgbText(current[k])})\t${P.toHex(current[k])}`).join("\n");
+    copy(text, e.currentTarget);
+  });
+  $("copy-link").addEventListener("click", (e) => copy(location.href, e.currentTarget));
+
+  // URL の #c=... から復元（共有用）
+  const m = location.hash.match(/^#c=(.+)$/);
+  if (m) { try { spec.value = decodeURIComponent(m[1]); } catch (e) {} }
+  apply(false);
+})();
+</script>
+</body>
+</html>
