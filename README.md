@@ -10,7 +10,7 @@
 
 ## Web 版
 
-GitHub Pages で公開しています：**https://OWNER.github.io/REPO/**
+GitHub Pages で公開しています：**https://seminar.k16kgw.com/slide-palette/**
 
 - 色はカラーコード・RGB・HSL・HSV・色相の角度・OKLCH・CMYK のどれでも入力できます。カラーピッカーや色相環から選ぶこともできます。
 - 生成した配色を当てはめたスライドの見本が表示され、ページ全体もその配色になります。
@@ -75,4 +75,4 @@ python tests/check_consistency.py
 
 ## GitHub Pages の設定
 
-リポジトリの **Settings → Pages** で、Source を「Deploy from a branch」、Branch を `main` / `(root)` にして保存すると、数分後に上記の URL で公開されます。
+リポジトリの **Settings → Pages** で、Source を「Deploy from a branch」、Branch を `main` / `(root)` にして保存すると、数分後に上記の URL で公開されます。ドメインはユーザーサイト（k16kgw.github.io）の設定を引き継ぐので、このリポジトリにはカスタムドメインを設定しないでください。
